@@ -1,0 +1,96 @@
+---
+title: "Project write-up for practical machine learning"
+output: html_document
+---
+
+##Introduction
+The goal of this project is to learn the manner in which experimental subjects did the exercises and predict their class for future upcoming data. 
+
+##Data processing
+First we download data from Internet and fetch them into memory. The author of this report has taken a look into the raw data and removed non-related data such as time stamp, user name and sequence id, and columns that contain `NA` values.
+
+```{r echo=TRUE, cache=FALSE}
+set.seed(3333)
+require(caret)
+require(ggplot2)
+require(randomForest)
+data<-read.csv('pml-training.csv')
+clean_data <- subset(data, select=-c(1:6,12:36,50:59,69:83,87:101,103:112,125:139,141:150))
+```
+
+We then divide the training dataset into two parts based on `classe`. 70% of them will be used for training and the rest 30% will be used for cross validation.
+
+```{r echo=TRUE}
+inTrain <- createDataPartition(clean_data$classe,p=.7,list = TRUE)
+training<-clean_data[inTrain[[1]],]
+testing<-clean_data[-inTrain[[1]],]
+```
+
+Next we analyze the correlation among variables using the corrgram package.
+```{r echo=TRUE}
+require(corrgram)
+corMatrix<-cor(training[,-c(length(training))])
+corrgram(corMatrix,order=T,lower.panel=panel.shade,upper.panel=panel.pie)
+```
+
+As shown in the correlation plot, we don't see obvious concentration of red or blue area that indicats strong positive / negative correlation. For convinience, we take all current variables into account for training. 
+
+
+##Models, Training and Cross Validation
+
+We first consider the Recursive Partitioning and Regression Trees model that is easy to interpret and fast in performance. 
+
+```{r echo=TRUE}
+model_rpart <- train(classe~.,data=training,method='rpart')
+confusionMatrix(predict(model_rpart,testing),testing$classe)
+```
+
+Unfortunately, only 56% of accuracy is achieved in cross validation. That is to say, submitting the predictions with this model, I would expect to get 11 right answers out of 20 questions. Can we do better?
+
+In order to get accuracy as high as possible, we turn to Random Forests model. The most obvious con of is model the speed, we are directly using randomForest() instead of train() to improve performance (credit goes to discussions in course forum). 
+
+```{r echo=TRUE}
+model_rf <- randomForest(classe~.,data=training)
+confusionMatrix(predict(model_rf,testing),testing$classe)
+```
+
+Now we achieved 99.8% accuracy, and I am expecting to get 20*99.8% = 19.96 right answers in the submission page. Till now we have found the appropriate model that gives us satisfactory accuracy.
+
+Here I am having a concern on the overfitting. As we have only 5 classes to predict and the training data set provided has 19622 cases. Isn't it way too large to train the model? Next I try only subsetting 10% of data for training and see how the accuracy goes. 
+
+```{r echo=TRUE}
+#require(caret)
+inTrain <- createDataPartition(clean_data$classe,p=.1,list = TRUE)
+training<-clean_data[inTrain[[1]],]
+testing<-clean_data[-inTrain[[1]],]
+model_rf2 <- randomForest(classe~., data=training)  
+confusionMatrix(predict(model_rf2,testing),testing$classe)
+```
+
+The expected accuracy is 96%, and I would expect 19.2 right answers in the submission page. In other words, even with a much smaller training data set, it's possible in this case to come up with a pretty accurate model.
+
+##Testing
+
+The answers submitted to coursera surely comes from the random forest model with large training set. Luckily all 20 answers are right. 
+
+By comparing the predicted given by the less accurate random forest model `model_rf2` and regression tree `model_rpart`, we see
+
+- Random forest with small training set:
+- - Expected right answers: 19.2
+- - Overseved right answers: 18
+
+- Regression tree:
+- - Expected right answers: 11.2
+- - Observed right answers: 10
+
+```{r echo=TRUE}
+pml_test<-read.csv('pml-testing.csv')
+pml_test <- subset(pml_test, select=-c(1:6,12:36,50:59,69:83,87:101,103:112,125:139,141:150))
+p_rf <- predict(model_rf,pml_test)
+p_rf
+p_rf2 <- predict(model_rf2,pml_test)
+p_rpart <- predict(model_rpart,pml_test)
+table(p_rf, p_rf2)
+table(p_rf, p_rpart)
+
+```
